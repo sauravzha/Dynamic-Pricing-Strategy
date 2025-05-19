@@ -62,19 +62,37 @@ values = [profitable_count, loss_count]
 
 # Preprocessing function
 def preprocess_data(data):
-    # Handling missing values
-    numeric_features = data.select_dtypes(include=['float', 'int']).columns
+    def preprocess_data(data):
+    import numpy as np
+    import pandas as pd
+
+    # Handle missing values in numeric columns
+    numeric_features = data.select_dtypes(include=['float64', 'int64']).columns
     data[numeric_features] = data[numeric_features].fillna(data[numeric_features].mean())
-    
+
+    # Handle missing values in categorical columns
     categorical_features = data.select_dtypes(include=['object']).columns
-    data[categorical_features] = data[categorical_features].fillna(data[categorical_features].mode().iloc[0])
-    
-    # Convert categorical feature "Vehicle_Type" to one-hot encoded columns
-    data = pd.get_dummies(data, columns=["Vehicle_Type"], drop_first=True)
-    
+    for col in categorical_features:
+        if data[col].isnull().sum() > 0:
+            data[col] = data[col].fillna(data[col].mode()[0])
+
+    # Convert 'Vehicle_Type' into numerical encoding
+    if 'Vehicle_Type' in data.columns:
+        data['Vehicle_Type'] = data['Vehicle_Type'].map({'Economy': 0, 'Premium': 1})
+        # Optional: if there are other types, handle them too
+        data['Vehicle_Type'] = data['Vehicle_Type'].fillna(0)
+
+    # Optional: remove outliers using IQR
+    for col in numeric_features:
+        Q1 = data[col].quantile(0.25)
+        Q3 = data[col].quantile(0.75)
+        IQR = Q3 - Q1
+        lower = Q1 - 1.5 * IQR
+        upper = Q3 + 1.5 * IQR
+        data[col] = np.where((data[col] < lower) | (data[col] > upper), data[col].mean(), data[col])
+
     return data
-new_data = preprocess_data(data)
-st.dataframe(new_data)
+
 # Train a Random Forest model
 def train_model(data):
     model = RandomForestRegressor()
@@ -105,10 +123,16 @@ def predict_price(model, number_of_riders, number_of_drivers, Vehicle_Type, expe
     return predicted_price
 
 # Streamlit UI
+# Streamlit UI
 user_number_of_riders = st.slider("Number of Riders", min_value=1, max_value=100, value=50)
 user_number_of_drivers = st.slider("Number of Drivers", min_value=1, max_value=100, value=25)
 user_vehicle_type = st.selectbox("Vehicle Type", ["Economy", "Premium"])
 expected_ride_duration = st.slider("Expected Ride Duration (minutes)", min_value=5, max_value=60, value=30)
+
+# ⚠️ Add a warning if riders exceed drivers
+if user_number_of_riders > user_number_of_drivers:
+    st.warning("Warning: The number of riders exceeds the number of drivers. This may lead to increased ride prices due to high demand.")
+
 
 # Preprocess data and train the model
 data = preprocess_data(data)
@@ -122,7 +146,7 @@ st.write(f"Predicted price: ${predicted_price:.2f}")
 st.header("Actual vs Predicted Values")
 
 # Load test set for visualization
-test_data = pd.read_csv("test_data.csv")
+test_data = pd.read_csv("dynamic_pricing.csv")
 x_test = test_data[["Number_of_Riders", "Number_of_Drivers", "Vehicle_Type", "Expected_Ride_Duration"]]
 y_test = test_data["adjusted_ride_cost"]
 
